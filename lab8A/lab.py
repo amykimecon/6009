@@ -5,8 +5,53 @@ import sys
 
 class EvaluationError(Exception):
     """Exception to be raised if there is an error during evaluation."""
-    pass
 
+    def __str__(self):
+        return "EvaluationError"
+
+def mult(args):
+    prod = 1
+    for elem in args:
+        prod *= elem
+    return prod
+
+
+class Environment:
+    def __init__(self, parent=None):
+        self.parent = parent
+        if parent == None:
+            self.assignments = {
+                '+': sum,
+                '-': lambda args: -args[0] if len(args) == 1 else (args[0] - sum(args[1:])),
+                '*': mult,
+                '/': lambda args: args[0] if len(args) == 1 else (args[0]/mult(args[1:]))
+            }
+        else:
+            self.assignments = {}
+
+
+    def __setitem__(self,key,value):
+        """
+        Setter function: sets key to value in CURRENT environment
+        """
+        self.assignments[key] = value
+
+    def __getitem__(self,key):
+        """
+        Getter function: retrieves value of key in current environment,
+            otherwise loops through parent environment until found or
+            throws EvaluationError.
+        """
+        if key in self.assignments:
+            return self.assignments[key]
+
+        env = self
+        while env.parent != None:
+            if key in env.parent.assignments:
+                return env.parent.assignments[key]
+            env = env.parent
+
+        raise EvaluationError
 
 def tokenize(source):
     """
@@ -87,26 +132,15 @@ def parse(tokens):
         raise SyntaxError
     return parse_expression(0)[0]
 
-def mult(args):
-    prod = 1
-    for elem in args:
-        prod *= elem
-    return prod
+def result_and_env(tree, env = None):
+    #Initializing environment (if none given) to empty environment with builtins as parent
+    if env == None:
+        env = Environment(Environment())
+        env.assignments = {}
 
-def div(args):
-    divided = args[0]
-    for elem in range(1,len(args)):
-        divided = divided/args[elem]
-    return divided
+    return (evaluate(tree,env),env)
 
-carlae_builtins = {
-    '+': sum,
-    '-': lambda args: -args[0] if len(args) == 1 else (args[0] - sum(args[1:])),
-    '*': mult,
-    '/': lambda args: args[0] if len(args) == 1 else (args[0]/mult(args[1:]))
-}
-
-def evaluate(tree):
+def evaluate(tree, env = None):
     """
     Evaluate the given syntax tree according to the rules of the carlae
     language.
@@ -114,31 +148,41 @@ def evaluate(tree):
     Arguments:
         tree (type varies): a fully parsed expression, as the output from the
                             parse function
+        environment: the environment to evaluate/define in
     """
+    #Initializing environment (if none given) to empty environment with builtins as parent
+    if env == None:
+        env = Environment(Environment())
+        env.assignments = {}
+
     if not isinstance(tree,list):
-        if tree in carlae_builtins:
-            return carlae_builtins[tree]
-
-        if isinstance(tree, float):
+        #Checking if tree is singular number or function
+        if isinstance(tree, float) or isinstance(tree, int):
             return tree
+        return env[tree]
 
-    if tree[0] in carlae_builtins:
-        op = carlae_builtins[tree[0]]
+    #Defining function
+    if tree[0] == "define":
+        if len(tree) < 3:
+            raise EvaluationError
+        env[tree[1]] = evaluate(tree[2],env)
+        return evaluate(tree[2],env)
+
+    #Calling function, recursively evaluating
+    else:
+        op = env[tree[0]]
         tree = tree[1:]
         new_tree = []
         for subelem in tree:
-            new_tree.append(evaluate(subelem))
+            new_tree.append(evaluate(subelem, env))
         return op(new_tree)
-
-    else:
-        raise EvaluationError
 
 #print(evaluate(['+', 2.0, ['-', 5.0, 3.0], 7.0, 8.0]))
 
 if __name__ == '__main__':
     # code in this block will only be executed if lab.py is the main file being
     # run (not when this module is imported)
-    #pass
+    # pass
     expr = input(">>> ")
     while expr != "QUIT":
         try:
