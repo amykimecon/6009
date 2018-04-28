@@ -53,6 +53,15 @@ class Environment:
 
         raise EvaluationError
 
+class Func:
+    def __init__(self, params, body, env):
+        self.params = params
+        self.body = body
+        self.env = env
+
+    def __str__(self):
+        return str(self.body)
+
 def tokenize(source):
     """
     Splits an input string into meaningful tokens (left parens, right parens,
@@ -138,7 +147,72 @@ def result_and_env(tree, env = None):
         env = Environment(Environment())
         env.assignments = {}
 
-    return (evaluate(tree,env),env)
+    print('env',env.assignments)
+    if not isinstance(tree,list):
+        #Checking if tree is singular number or function
+        if isinstance(tree, float) or isinstance(tree, int):
+            return (tree, env)
+        return (env[tree],env)
+
+    #Defining variable
+    if tree[0] == "define":
+        if len(tree) < 3:
+            raise EvaluationError
+
+        if isinstance(tree[1], list): #If the name is an S-expression, evaluate value as user-defined function
+            return result_and_env(['define',tree[1][0],['lambda',tree[1][1:],tree[2]]],env)
+
+        else:
+            print("setting", tree[1], "to value",result_and_env(tree[2],env)[0])
+            env[tree[1]] = result_and_env(tree[2],env)[0]
+            return result_and_env(tree[2],env)
+
+    #Creating Func object and returning
+    if tree[0] == "lambda":
+        if len(tree) < 3:
+            raise EvaluationError
+        return (Func(tree[1],tree[2],env), env)
+
+    #Calling function, recursively evaluating
+    else:
+        try:
+            #print("env",env.assignments)
+            #print("parent",env.parent.assignments)
+            op = env[tree[0]]
+            print("Function:" , op, "Params", op.params, "Environment", op.env.assignments)
+        finally:
+            if isinstance(tree[0],int) or isinstance(tree[0],float):
+                raise EvaluationError
+            try:
+                #print('tree',tree)
+                if tree[0][0] == "lambda":
+                    first = result_and_env(tree[0],env)[0]
+                    #print('first',first)
+                    if isinstance(first,Func):
+                        env['temp_lambda'] = first
+                        op = first
+            finally:
+                if isinstance(op, Func):
+                    if env.parent == op.env:
+                        new_env = env
+                    else:
+                        new_env = Environment(op.env)
+                    ind = 1
+                    try:
+                        for param in op.params:
+                            print("param",param)
+                            print("value",tree[ind])
+                            new_env[param] = result_and_env(tree[ind],new_env)[0]
+                            ind += 1
+                    except:
+                        raise EvaluationError
+                    return (result_and_env(op.body, new_env)[0],new_env)
+
+                tree = tree[1:]
+                new_tree = []
+                for subelem in tree:
+                    new_tree.append(result_and_env(subelem, env)[0])
+                return op(new_tree),env
 
 def evaluate(tree, env = None):
     """
@@ -150,43 +224,40 @@ def evaluate(tree, env = None):
                             parse function
         environment: the environment to evaluate/define in
     """
-    #Initializing environment (if none given) to empty environment with builtins as parent
-    if env == None:
-        env = Environment(Environment())
-        env.assignments = {}
+    return result_and_env(tree,env)[0]
 
-    if not isinstance(tree,list):
-        #Checking if tree is singular number or function
-        if isinstance(tree, float) or isinstance(tree, int):
-            return tree
-        return env[tree]
+# e = Environment()
+# env = Environment(e)
+# print(evaluate(parse(tokenize("(define x 7)")),env))
+# print(evaluate(parse(tokenize("(define foo (lambda (x) (lambda (y) (+ x y))))")),env))
+# print(evaluate(parse(tokenize("(define bar (foo 3))")),env))
+# print(evaluate(parse(tokenize("(bar 2)")),env))
+# print(evaluate(parse(tokenize("((lambda (x) (* x x)) 3)")),env))
+#(define addN(lambda (n) (lambda (i) (+ i n))))
+#(define add7(addN 7))
+#(add7 2)
+#(add7 ((addN 3)((addN 19) 8)))
 
-    #Defining function
-    if tree[0] == "define":
-        if len(tree) < 3:
-            raise EvaluationError
-        env[tree[1]] = evaluate(tree[2],env)
-        return evaluate(tree[2],env)
-
-    #Calling function, recursively evaluating
-    else:
-        op = env[tree[0]]
-        tree = tree[1:]
-        new_tree = []
-        for subelem in tree:
-            new_tree.append(evaluate(subelem, env))
-        return op(new_tree)
-
-#print(evaluate(['+', 2.0, ['-', 5.0, 3.0], 7.0, 8.0]))
 
 if __name__ == '__main__':
     # code in this block will only be executed if lab.py is the main file being
     # run (not when this module is imported)
     # pass
     expr = input(">>> ")
+    env = Environment(Environment())
     while expr != "QUIT":
         try:
-            print(evaluate(parse(tokenize(expr))))
+            res = result_and_env(parse(tokenize(expr)),env)
+            print(res[0])
+            env = res[1]
         except:
             print("error, try again")
         expr = input(">>> ")
+    # expr = input(">>> ")
+    # while expr != "QUIT":
+    #     try:
+    #         res = evaluate(parse(tokenize(expr)))
+    #         print(res)
+    #     except:
+    #         print("error, try again")
+    #     expr = input(">>> ")
